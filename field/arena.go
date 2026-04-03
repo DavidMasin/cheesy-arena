@@ -108,6 +108,7 @@ type Arena struct {
 	lastRedPlcFuel  int
 	lastBluePlcFuel int
 	ScoreMu         sync.RWMutex
+	GameData        string
 }
 
 type AllianceStation struct {
@@ -676,6 +677,10 @@ func (arena *Arena) Update() {
 	case PreMatch:
 		auto = true
 		enabled = false
+		// Set all game data values to empty
+		for _, allianceStation := range arena.AllianceStations {
+			allianceStation.GameData = ""
+		}
 	case StartMatch:
 		arena.MatchStartTime = time.Now()
 		arena.LastMatchTimeSec = -1
@@ -866,9 +871,9 @@ func (arena *Arena) updateGameSpecificMessage() {
 	// Rule: Send "B" if Red won Auto (meaning Blue has advantage/active first)
 	// Rule: Send "R" if Blue won Auto (meaning Red has advantage/active first)
 
-	msg := "R" // Default: Blue Won -> Red gets Active first ("R")
+	msg := "B" // Default: Blue Won -> Red gets Active first ("R")
 	if arena.redWonAutoFuel() {
-		msg = "B" // Red Won -> Blue gets Active first ("B")
+		msg = "R" // Red Won -> Blue gets Active first ("B")
 	}
 
 	// This message is static for the duration of Teleop based on Auto results.
@@ -1081,13 +1086,13 @@ func (arena *Arena) setupNetwork(teams [6]*model.Team, isPreload bool) {
 		if err := arena.accessPoint.ConfigureTeamWifi(teams); err != nil {
 			log.Printf("Failed to configure team WiFi: %s", err.Error())
 		}
-		go func() {
-			arena.setSCCEthernetEnabled(false)
-			if err := arena.networkSwitch.ConfigureTeamEthernet(teams); err != nil {
-				log.Printf("Failed to configure team Ethernet: %s", err.Error())
-			}
-			arena.setSCCEthernetEnabled(true)
-		}()
+		// go func() {
+		// 	arena.setSCCEthernetEnabled(false)
+		// 	if err := arena.networkSwitch.ConfigureTeamEthernet(teams); err != nil {
+		// 		log.Printf("Failed to configure team Ethernet: %s", err.Error())
+		// 	}
+		// 	arena.setSCCEthernetEnabled(true)
+		// }()
 	}
 }
 
@@ -1147,7 +1152,7 @@ func (arena *Arena) sendDsPacket(auto bool, enabled bool) {
 				!allianceStation.Bypass
 			dsConn.EStop = allianceStation.EStop
 			dsConn.AStop = allianceStation.AStop
-			err := dsConn.update(arena)
+			err := dsConn.update(arena, allianceStation.GameData)
 			if err != nil {
 				log.Printf("Unable to send driver station packet for team %d.", allianceStation.Team.Id)
 			}
@@ -1300,7 +1305,7 @@ func (arena *Arena) handlePlcInputOutput() {
 	}
 
 	// Release lock after all score modifications and notifications are triggered.
-	//arena.ScoreMu.Unlock()
+	// arena.ScoreMu.Unlock()
 
 	// 2026 REBUILT: Set Hub Lights based on Active status
 	if arena.MatchState == AutoPeriod || arena.MatchState == PausePeriod || arena.MatchState == TeleopPeriod {
